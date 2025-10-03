@@ -1,23 +1,33 @@
 package org.chart;
 
 import javafx.application.Application;
-import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
-
-import java.io.IOException;
+import org.chart.chart.ChartFactory;
+import org.chart.controller.MainController;
+import org.chart.service.LogParserService;
 
 public class FxStarter extends Application {
+
+    private MainController controller;
+
     @Override
-    public void start(Stage stage) throws IOException {
-        FXMLLoader fxmlLoader = new FXMLLoader(FxStarter.class.getResource("hello-view.fxml"));
-        Scene scene = new Scene(fxmlLoader.load(), 320, 240);
-        stage.setTitle("Hello!");
+    public void start(Stage stage) {
+        controller = new MainController(new LogParserService(), new ChartFactory());
+        Scene scene = new Scene(controller.getView());
+        stage.setTitle("Tank Level Visualizer");
         stage.setScene(scene);
         stage.show();
     }
 
+    @Override
+    public void stop() {
+        if (controller != null) {
+            controller.shutdown();
+        }
+    }
+
     public static void main(String[] args) {
-        launch();
+        launch(args);
     }
 }
