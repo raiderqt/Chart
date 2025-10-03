@@ -82,13 +82,13 @@ public class LogParserService {
 
         for (int i = 0; i < rows.size(); i++) {
             ParsedRow row = rows.get(i);
-            if (row.values().length < 5) {
+            if (row.values().length < 4) {
                 continue;
             }
 
             String tankId = safeValue(row.values(), 0, "Tank " + (i + 1));
             LocalDateTime timestamp = parseTimestamp(requiredValue(row.values(), 1));
-            double levelRaw = parseNumber(row.values()[4]);
+            double levelRaw = parseNumber(row.values()[3]);
 
             DataPoint point = new DataPoint(
                     tankId,
