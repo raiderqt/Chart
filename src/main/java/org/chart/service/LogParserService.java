@@ -4,7 +4,14 @@ import org.chart.model.DataModel;
 import org.chart.model.DataPoint;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,9 +31,12 @@ public class LogParserService {
     public DataModel parse(Path file) throws IOException {
         Objects.requireNonNull(file, "file");
 
+        byte[] fileBytes = Files.readAllBytes(file);
+        Charset charset = detectCharset(fileBytes);
+
         List<ParsedRow> rows = new ArrayList<>();
 
-        try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(fileBytes), charset))) {
             String line;
             boolean insideDataset = false;
 
@@ -89,6 +99,58 @@ public class LogParserService {
         }
 
         return model;
+    }
+
+    private static Charset detectCharset(byte[] data) {
+        if (data.length >= 3
+                && (data[0] & 0xFF) == 0xEF
+                && (data[1] & 0xFF) == 0xBB
+                && (data[2] & 0xFF) == 0xBF) {
+            return StandardCharsets.UTF_8;
+        }
+        if (data.length >= 2) {
+            int first = data[0] & 0xFF;
+            int second = data[1] & 0xFF;
+            if (first == 0xFF && second == 0xFE) {
+                return StandardCharsets.UTF_16LE;
+            }
+            if (first == 0xFE && second == 0xFF) {
+                return StandardCharsets.UTF_16BE;
+            }
+        }
+
+        for (Charset candidate : CHARSET_CANDIDATES) {
+            CharsetDecoder decoder = candidate.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT);
+            try {
+                decoder.decode(ByteBuffer.wrap(data));
+                return candidate;
+            } catch (CharacterCodingException ex) {
+                // try next
+            }
+        }
+
+        return StandardCharsets.UTF_8;
+    }
+
+    private static final List<Charset> CHARSET_CANDIDATES = createCharsetCandidates();
+
+    private static List<Charset> createCharsetCandidates() {
+        List<Charset> candidates = new ArrayList<>();
+        candidates.add(StandardCharsets.UTF_8);
+        candidates.add(StandardCharsets.UTF_16LE);
+        candidates.add(StandardCharsets.UTF_16BE);
+        addIfSupported(candidates, "windows-1251");
+        addIfSupported(candidates, "koi8-r");
+        addIfSupported(candidates, "cp866");
+        return List.copyOf(candidates);
+    }
+
+    private static void addIfSupported(List<Charset> target, String charsetName) {
+        if (Charset.isSupported(charsetName)) {
+            target.add(Charset.forName(charsetName));
+        }
     }
 
     private static int determineTankIdColumn(List<ParsedRow> rows) {
