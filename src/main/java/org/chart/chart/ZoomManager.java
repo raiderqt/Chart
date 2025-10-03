@@ -2,12 +2,14 @@ package org.chart.chart;
 
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
+import javafx.scene.Parent;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 
@@ -61,8 +63,6 @@ public class ZoomManager {
         selection.setStrokeWidth(1.0);
         selection.setVisible(false);
         selection.setMouseTransparent(true);
-        chart.getPlotChildren().add(selection);
-        selection.toFront();
     }
 
     private void installHandlers() {
@@ -71,11 +71,23 @@ public class ZoomManager {
             if (plotArea == null) {
                 return;
             }
+            addSelectionOverlay();
             plotArea.setOnScroll(this::handleScroll);
             plotArea.setOnMousePressed(this::handleMousePressed);
             plotArea.setOnMouseDragged(this::handleMouseDragged);
             plotArea.setOnMouseReleased(this::handleMouseReleased);
         });
+    }
+
+    private void addSelectionOverlay() {
+        if (plotArea == null) {
+            return;
+        }
+        Parent parent = plotArea.getParent();
+        if (parent instanceof Pane pane && !pane.getChildren().contains(selection)) {
+            pane.getChildren().add(selection);
+            selection.toFront();
+        }
     }
 
     private void handleScroll(ScrollEvent event) {
