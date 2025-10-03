@@ -41,20 +41,27 @@ public class LogParserService {
             boolean insideDataset = false;
 
             while ((line = reader.readLine()) != null) {
-                if (!insideDataset) {
-                    if (line.contains(DATASET_MARKER)) {
-                        insideDataset = true;
-                    }
+                String trimmed = line.trim();
+
+                if (trimmed.contains(DATASET_MARKER)) {
+                    insideDataset = true;
                     continue;
                 }
 
-                String trimmed = line.trim();
+                if (!insideDataset) {
+                    continue;
+                }
+
                 if (trimmed.isEmpty()) {
+                    continue;
+                }
+
+                if (trimmed.startsWith("[") && !trimmed.contains(";")) {
                     insideDataset = false;
                     continue;
                 }
 
-                if (!trimmed.contains(";")) {
+                if (!isLikelyDataRecord(trimmed)) {
                     insideDataset = false;
                     continue;
                 }
@@ -73,24 +80,19 @@ public class LogParserService {
             return model;
         }
 
-        int tankIdIndex = determineTankIdColumn(rows);
         for (int i = 0; i < rows.size(); i++) {
             ParsedRow row = rows.get(i);
             if (row.values().length < 5) {
                 continue;
             }
 
-            String recordId = safeValue(row.values(), 0, "record-" + (i + 1));
-            String tankId = safeValue(row.values(), tankIdIndex, "");
-            if (tankId.isBlank()) {
-                tankId = "Tank 1";
-            }
-            LocalDateTime timestamp = parseTimestamp(safeValue(row.values(), 1, null));
+            String tankId = safeValue(row.values(), 0, "Tank " + (i + 1));
+            LocalDateTime timestamp = parseTimestamp(requiredValue(row.values(), 1));
             double levelRaw = parseNumber(row.values()[4]);
 
             DataPoint point = new DataPoint(
                     tankId,
-                    recordId,
+                    createRecordId(tankId, timestamp, i + 1),
                     timestamp,
                     levelRaw,
                     List.copyOf(Arrays.asList(row.values())),
@@ -153,48 +155,6 @@ public class LogParserService {
         }
     }
 
-    private static int determineTankIdColumn(List<ParsedRow> rows) {
-        int maxColumns = rows.stream().mapToInt(row -> row.values().length).max().orElse(0);
-        int totalRows = rows.size();
-
-        int bestIndex = -1;
-        int bestDistinct = Integer.MAX_VALUE;
-
-        for (int column = 0; column < maxColumns; column++) {
-            Set<String> distinct = new HashSet<>();
-            boolean hasValue = false;
-            for (ParsedRow row : rows) {
-                if (row.values().length <= column) {
-                    continue;
-                }
-                String value = row.values()[column];
-                if (!value.isBlank()) {
-                    hasValue = true;
-                    distinct.add(value);
-                    if (totalRows > 10 && distinct.size() > totalRows / 2) {
-                        break;
-                    }
-                }
-            }
-            if (!hasValue) {
-                continue;
-            }
-            int distinctCount = distinct.size();
-            if (distinctCount == 0) {
-                continue;
-            }
-            if (distinctCount == 1 && bestIndex == -1) {
-                bestIndex = column;
-                bestDistinct = distinctCount;
-            } else if (distinctCount > 1 && distinctCount < totalRows && distinctCount < bestDistinct) {
-                bestIndex = column;
-                bestDistinct = distinctCount;
-            }
-        }
-
-        return bestIndex >= 0 ? bestIndex : 0;
-    }
-
     private static LocalDateTime parseTimestamp(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Пустое значение времени");
@@ -226,6 +186,38 @@ public class LogParserService {
             }
         }
         return defaultValue == null ? "" : defaultValue;
+    }
+
+    private static String requiredValue(String[] values, int index) {
+        if (index >= 0 && index < values.length) {
+            String value = values[index];
+            if (!value.isBlank()) {
+                return value;
+            }
+        }
+        throw new IllegalArgumentException("Отсутствует обязательное значение в колонке " + (index + 1));
+    }
+
+    private static boolean isLikelyDataRecord(String line) {
+        String[] parts = line.split(";", -1);
+        if (parts.length < 5) {
+            return false;
+        }
+        String tankId = parts[0].trim();
+        if (tankId.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < tankId.length(); i++) {
+            char ch = tankId.charAt(i);
+            if (!Character.isDigit(ch)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String createRecordId(String tankId, LocalDateTime timestamp, int index) {
+        return tankId + "-" + timestamp + "-" + index;
     }
 
     private record ParsedRow(String[] values, String rawLine) {
